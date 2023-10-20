@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<!-- by Martin Kmenta 2023 -->
+<html>
+<head>
+    <title>Real-Time Painting</title>
+</head>
+<style>
+    
+/**
+ * !     preview mode
+        
+*/
+
+        
+    #paintCanvas {
+        position: absolute;
+        top: 10px;
+        left: 10.5em;
+        border: 0px solid #000;
+    }
+
+    input {
+        width: 10em;
+    }
+
+    select {
+        width: 10em;
+    }
+
+    .coord-label_name {
+        display: inline-block; 
+        width: 3em;
+    }
+
+    .coord-label_coords {
+        display: inline-block;
+        width: 2em; 
+        text-align: right;
+    }
+
+    .coord-label_x {
+        display: inline-block;
+        width: 0.5em; 
+    }
+
+    .coord-input {
+        width: 3.8em;
+        text-align: right;
+    }
+
+</style>
+<body>
+    <div style="max-height: 98vh; overflow-y: auto; scrollbar-width: thin; max-width: 10em;">
+        <div class="Common">
+            <input style="width: 3.8em;" type="color" id="pen_color" oninput="color_changed()">
+            <label>&nbsp;Pen color</label> <br>
+            <input style="width: 3.2em;" type="number" id="pen_width_1" step="0.1" min="0" oninput="pen_width_changed_1()">
+            <label>&nbsp;Pen width</label> <br>
+            <input type="range" id="pen_width_2" step="0.1" min="0.01" max="5" oninput="pen_width_changed_2()"><br>
+        
+            <input style="width: 3.8em;" type="color" id="background_color" oninput="background_changed()" value="#ffffff">
+            <label>&nbsp;Background</label> <br>
+            <input type="checkbox" id="use_background" style="width: auto;" oninput="use_background_changed()">
+            <label>Use background</label> <br>
+        </div> <br>
+        
+
+        <label for="itemsDropdown">Select an Item:</label> <br>
+        <select id="itemsDropdown" onchange="change_inputs()"> </select> <br><br>
+        <div id="dynamicInputs"></div> <br><br>
+
+        <div>
+            <label>waypoints </label><label id="waypoint_cnt">0</label><br>
+            <input type="button" value="Push waypoint" onclick="push_waypoint();"><br>
+            <input type="button" class="exists_waypoint" value="Pop waypoint" onclick="pop_waypoint();">
+            <br class="exists_waypoint">
+            <input type="button" class="exists_waypoint" value="Load waypoint" onclick="load_waypoint();">
+            <br class="exists_waypoint">
+        </div> <br>
+        
+        <div>
+            <label>Points (X | Y) [px]:</label><br>
+            <div style="display: inline-block;">
+                <label class="coord-label_name">Actual: </label>
+                <label class="coord-label_coords" id="actual_point_coords_x">0</label>
+                <label class="coord-label_x">|</label>
+                <label class="coord-label_coords" id="actual_point_coords_y">0</label>
+            </div><br>
+            <div style="display: inline-block;">
+                <label class="coord-label_name">Mid: </label>
+                <label class="coord-label_coords" id="midpoint_coords_x">XX</label>
+                <label class="coord-label_x">|</label>
+                <label class="coord-label_coords" id="midpoint_coords_y">YY</label>
+            </div><br>
+            <div style="display: inline-block;">
+                <label class="coord-label_name">Last: </label>
+                <label class="coord-label_coords" id="last_point_coords_x">0</label>
+                <label class="coord-label_x">|</label>
+                <label class="coord-label_coords" id="last_point_coords_y">0</label>
+            </div><br>
+            <label>Custom:</label><br>
+            <input class="coord-input" type="number" step="1" min="1" id="custom_point_coords_x", value="0"></input><label> | </label>
+            <input class="coord-input" type="number" step="1" min="1" id="custom_point_coords_y" value="0"></input><br>
+            <label>(possible outside of the board)</label><br>
+        </div> <br>
+
+        <div>
+            <input type="button" value="Draw from midpoint" onclick="draw_from_midpoint();"><br>
+            <input type="button" value="Draw from last p." onclick="draw_from_last_point();"><br>
+            <input type="button" value="Draw from custom p." onclick="draw_from_custom_point();"><br>
+            <input type="button" value="Stop drawing" onclick="stop_drawing();"><br>
+            <input type="button" value="Clear" onclick="plate_clear();"><br>
+        </div> <br>
+
+        <div>
+            <input type="button" value="Download" onclick="download_image();"><br>
+            <input type="button" value="Load" onclick="load_image();"><br>
+        </div> <br>
+
+        <div>
+            <label>Board width | height</label> <br>
+            <input class="coord-input" type="number" id="plate_width" step="1" min="1" 
+                id="custom_point_coords_x", value="0" oninput="plate_width_changed();"></input>
+            <label> | </label>
+            <input class="coord-input" type="number" id="plate_height" step="1" min="1" 
+                id="custom_point_coords_y" value="0" oninput="plate_heigh_changed();"></input><br>
+        </div> <br>
+
+        <div>
+            <input type="checkbox" style="width: auto;" id="save_cookies" oninput="save_cookies_changed()"><label>Save settings</label> <br>
+            <label>(after each drawing)</label> <br>
+            <input type="button" value="Clear settings" onclick="clear_cookies();"><br>
+            <input type="button" value="Restore defaults" onclick="restore_defaults();"><br>
+        </div> <br>
+    </div>
+
+    <canvas id="paintCanvas" style="border: 1px solid #000;"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.1/socket.io.js"></script>
+
+    <script>
+        
+        var canvas = null;
+        var tmp_canvas = null;
+        var tmp_canvas_draw_index = -1;
+        var draw_index = 0;
+
+        var items = {}
+        var default_items = {}
+        const history = [];
+
+        var isDrawing = false
+
+        var last_x = 0;
+        var last_y = 0;
+
+        var saving_to_cookies = false;
+
+        default_data = {
+            pen_width: 1,
+            pen_color: '#000000',
+            background_color: '#ffffff',
+            use_background: false,
+        }
+
+        function emToPx(emValue, fontSizeInPixels) {
+            return emValue * fontSizeInPixels;
+        }
+        
+        function getDefaultFontSize() {
+            const body = document.body || document.documentElement;
+            const computedStyle = window.getComputedStyle(body);
+            return parseFloat(computedStyle.fontSize);
+        }
+
+        canvas = document.getElementById('paintCanvas');
+        canvas.width = window.innerWidth - 10 - emToPx(10.5, getDefaultFontSize());
+        canvas.height = window.innerHeight - 20;
+        
+        function uprage_gui_board_size() {
+            document.getElementById('plate_width').value = canvas.width;
+            document.getElementById('plate_height').value = canvas.height;
+            update_midpoint_coords();
+        }
+        uprage_gui_board_size();
+        
+        const context = canvas.getContext('2d');
+
+        function update_actual_coords(e) {
+            const x = Math.floor(e.clientX - canvas.getBoundingClientRect().left);
+            const y = Math.floor(e.clientY - canvas.getBoundingClientRect().top);
+            document.getElementById('actual_point_coords_x').innerHTML = x;
+            document.getElementById('actual_point_coords_y').innerHTML = y;
+            // console.log('update_actual_coords', x, y);
+        }
+
+        function update_last_coords() {
+            document.getElementById('last_point_coords_x').innerHTML = last_x;
+            document.getElementById('last_point_coords_y').innerHTML = last_y;
+        }
+
+        function update_midpoint_coords() {
+            document.getElementById('midpoint_coords_x').innerHTML = Math.floor(canvas.width / 2);
+            document.getElementById('midpoint_coords_y').innerHTML = Math.floor(canvas.height / 2);
+        }
+
+        function background_changed() {
+            console.log('background_changed');
+            const color = document.getElementById('background_color').value;
+            canvas.style.backgroundColor = color;
+            data.background_color = color;
+        }
+
+        function use_background_changed() {
+            console.log('use_background_changed');
+            data.use_background = document.getElementById('use_background').checked;
+        }
+
+        function plate_width_changed() {
+            console.log('plate_width_changed');
+            const width = document.getElementById('plate_width').value;
+            if (tmp_canvas_draw_index != draw_index) {
+                tmp_canvas = context.getImageData(0, 0, canvas.width, canvas.height);
+                tmp_canvas_draw_index = draw_index;
+            }
+            canvas.width = width;
+            context.putImageData(tmp_canvas, 0, 0);
+            update_midpoint_coords();
+        }
+
+        function plate_heigh_changed() {
+            console.log('plate_heigh_changed');
+            const height = document.getElementById('plate_height').value;
+            if (tmp_canvas_draw_index != draw_index) {
+                tmp_canvas = context.getImageData(0, 0, canvas.width, canvas.height);
+                tmp_canvas_draw_index = draw_index;
+            }
+            canvas.height = height; 
+            context.putImageData(tmp_canvas, 0, 0);
+            update_midpoint_coords();
+        }
+
+        function color_changed() {
+            console.log('color_changed');
+            const color = document.getElementById('pen_color').value;
+            context.strokeStyle = color;
+            data.pen_color = color;
+        }
+
+        function pen_width_changed_1() {
+            console.log('pen_width_changed_1');
+            const width = document.getElementById('pen_width_1').value;
+            context.lineWidth = width;
+            data.pen_width = width;            
+            document.getElementById('pen_width_2').value = data.pen_width;
+        }
+
+        function pen_width_changed_2() {
+            console.log('pen_width_changed_2');
+            const width = document.getElementById('pen_width_2').value;
+            context.lineWidth = width;
+            data.pen_width = width;
+            document.getElementById('pen_width_1').value = data.pen_width;
+        }
+
+        function plate_clear() {
+            console.log('plate_clear');
+            context.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function stop_drawing() {
+            console.log('stop_drawing');
+            isDrawing = false;
+        }
+
+        function waypoint_cnt_changed() {
+            document.getElementById('waypoint_cnt').innerHTML = history.length;
+            elements = document.getElementsByClassName('exists_waypoint');
+            style = 'none';
+            if (history.length > 0) {
+                style = 'inline-block';
+            }
+            for (let i = 0; i < elements.length; i++) {
+
+                elements[i].style.display = style;
+            }
+        }
+
+        function push_waypoint() {
+            console.log('push_waypoint');
+            history.push(context.getImageData(0, 0, canvas.width, canvas.height));
+            waypoint_cnt_changed();
+        }
+
+        function pop_waypoint() {
+            console.log('pop_waypoint');
+            canvas.width = history[history.length - 1].width;
+            canvas.height = history[history.length - 1].height;
+            context.putImageData(history.pop(), 0, 0);
+            waypoint_cnt_changed();
+            uprage_gui_board_size();
+        }
+
+        function load_waypoint() {
+            console.log('load_waypoint');
+            canvas.width = history[history.length - 1].width;
+            canvas.height = history[history.length - 1].height;
+            context.putImageData(history[history.length - 1], 0, 0);
+            uprage_gui_board_size();
+        }
+        
+        function change_inputs() {
+            const selected = document.getElementById('itemsDropdown').value;
+            const inputs = document.getElementById('dynamicInputs');
+            inputs.innerHTML = '';
+            // console.log('change_inputs', selected);
+            // console.log(items[selected]);
+            for (const key in items[selected]) {
+                label = document.createElement('label')
+                label.innerHTML = items[selected][key].name;
+                inputs.appendChild(label);
+                inputs.appendChild(document.createElement('br'));
+                const input = document.createElement('input');
+                input.id    = key;
+                input.type  = items[selected][key].type;
+                input.step  = items[selected][key].step;
+                input.value = items[selected][key].value;
+                input.min   = items[selected][key].min;
+                input.max   = items[selected][key].max;
+                inputs.appendChild(input);
+                inputs.appendChild(document.createElement('br'));
+            }
+        }
+
+        function update_data_in_ui() {
+            document.getElementById('pen_width_1').value = data.pen_width;
+            document.getElementById('pen_color').value = data.pen_color;
+            document.getElementById('background_color').value = data.background_color;
+            document.getElementById('use_background').checked = data.use_background;
+            background_changed();
+            color_changed();
+            pen_width_changed_1();
+            use_background_changed();
+        }
+
+        function download_image() {
+            console.log('download_image');
+
+            if (data.use_background) {
+                download_image_with_background();
+            } else {
+                download_image_without_background();
+            }
+        }
+
+        function download_image_without_background() {
+            const image = canvas.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = image;
+            a.download = 'image.png';
+            a.click();
+        }
+
+        function download_image_with_background() {
+            tmp = context.getImageData(0, 0, canvas.width, canvas.height);
+            context.fillStyle = data.background_color; 
+            context.globalCompositeOperation = 'destination-over';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.globalCompositeOperation = 'source-over';
+              
+            download_image_without_background();
+
+            context.putImageData(tmp, 0, 0);
+        }
+
+        function load_image() {
+            console.log('load_image');
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/png';
+            input.onchange = e => { 
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = readerEvent => {
+                    const content = readerEvent.target.result;
+                    const image = new Image();
+                    image.src = content;
+                    image.onload = function () {
+                        canvas.width = image.width;
+                        canvas.height = image.height;
+                        context.drawImage(image, 0, 0);
+                        uprage_gui_board_size();
+                    }
+                }
+            }
+            input.click();
+        }
+
+
+
+
+
+
+
+        function get_cookie_names() {
+            var cookies = document.cookie.split('; ');
+            var list = [];
+            for (var i = 0; i < cookies.length; ++i) {
+                var cookie = cookies[i].split('=');
+                list.push(cookie[0]);
+            }
+            return list;
+        }
+
+
+
+
+
+
+
+        function set_cookie(cookieName, cookieValue, daysToExpire = 365) {
+            var expirationDate = new Date();
+            expirationDate.setDate(expirationDate.getDate() + daysToExpire);
+            var encodedValue = encodeURIComponent(cookieValue);
+            var cookieString = cookieName + '=' + encodedValue + '; expires=' + expirationDate.toUTCString() + '; path=/';
+            document.cookie = cookieString;
+
+            // console.log(cookieString);
+        }
+
+        function get_cookie(cookieName) {
+            var cookies = document.cookie.split('; ');
+            for (var i = 0; i < cookies.length; ++i) {
+                var cookie = cookies[i].split('=');
+                if (cookie[0] === cookieName) {
+                    var decodedValue = decodeURIComponent(cookie[1]);
+                    return decodedValue;
+                }
+            }
+            return null;
+        }
+
+        function restore_defaults() {
+            console.log('restore_defaults');
+            items = JSON.parse(JSON.stringify(default_items));
+            data = JSON.parse(JSON.stringify(default_data));
+            update_data_in_ui();
+            change_inputs();
+            save_cookies();
+        }
+
+
+
+
+        // function save_object_to_cookies(name, obj) {
+        //     document.cookie = `${name}=${JSON.stringify(obj)}`;
+        // }
+
+        // function load_object_from_cookies(name) {
+        //     const cookies = document.cookie.split(';');
+        //     const cookieName = `${name}=`;
+        //     for (let i = 0; i < cookies.length; i++) {
+        //         console.log(cookies[i]);
+        //         let cookie = cookies[i].trim();
+        //         if (cookie.indexOf(cookieName) === 0) {
+        //             return JSON.parse(cookie.substring(cookieName.length));
+        //         }
+        //     }
+        //     return null;
+        // }
+
+        // function clear_cookie(name) {
+        //     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        // }
+
+        function load_cookies() {
+            console.log('load_cookies');
+            // var stored_items = load_object_from_cookies('items');
+            var stored_items = JSON.parse(get_cookie('items'));
+            // console.log('stored_items', stored_items);
+            for (const key in stored_items) {
+                if (items.hasOwnProperty(key)) {
+                    // console.log('     updating', key, items[key]);
+                    for (const key_2 in items[key]) {
+                        // console.log('          updating', key_2, items[key][key_2]);
+                        items[key][key_2].value = stored_items[key][key_2].value;
+                    }
+                }
+            }
+            change_inputs();
+            // console.log(stored_items);
+
+            saving_to_cookies = get_cookie('saving_to_cookies') == 'true';
+            document.getElementById('save_cookies').checked = saving_to_cookies;
+
+            stored_data = JSON.parse(get_cookie('data'));
+            for (const key in stored_data) {
+                if (data.hasOwnProperty(key)) {
+                    data[key] = stored_data[key];
+                }
+            }
+            console.log(stored_data)
+            console.log(data)
+
+            document.getElementById('pen_width_1').value = data.pen_width;
+            document.getElementById('pen_color').value = data.pen_color;
+            document.getElementById('background_color').value = data.background_color;
+            document.getElementById('use_background').checked = data.use_background;
+            color_changed();
+            pen_width_changed_1();
+            background_changed();
+            use_background_changed();
+        }
+
+        function save_cookies() {
+            if (saving_to_cookies) {
+                console.log('save_cookies');
+                // save_object_to_cookies('items', items);
+                set_cookie('items', JSON.stringify(items));
+                // console.log(items);
+                // console.log(document.cookie);
+
+                set_cookie('data', JSON.stringify(data));
+            }
+        }
+
+        function clear_cookies() {
+            console.log('clear_cookies');
+            // clear_cookie('items');
+            set_cookie('items', JSON.stringify(items), 0);
+        }
+
+        function save_cookies_changed() {
+            console.log('save_cookies_changed');
+            saving_to_cookies = document.getElementById('save_cookies').checked;
+            
+            set_cookie('saving_to_cookies', saving_to_cookies);
+        }
+
+        update_last_coords();
+        update_midpoint_coords();
+        waypoint_cnt_changed();
+
+        // function drawLine(data) {
+        //     const { x, y, type } = data;
+        //     if (type === 'mousedown') {
+        //         context.beginPath();
+        //         context.moveTo(x, y);
+        //     } else if (type === 'mousemove') {
+        //         context.lineTo(x, y);
+        //         context.stroke();
+        //     } else if (type === 'mouseup' || type === 'mouseleave') {
+        //         context.closePath();
+        //     }
+        // };
+        
+        // function drawCircle(x, y) {
+        //     context.beginPath();
+        //     context.arc(x, y, 20, 0, Math.PI * 2); 
+        //     context.fillStyle = 'black';
+        //     context.fill();
+        //     context.closePath();
+        // }
+
+        // const vertices_cnt = 5
+        // const initial_size = 100
+        
+        // function drawFractal(x, y, size) {
+        //     if (!isDrawing) {
+        //         return;
+        //     }
+            
+        //     context.strokeStyle = 'black';
+        //     const vertices = [];
+        //     context.beginPath();
+        //     console.log(x, y);
+        //     for (let i = 0; i <= vertices_cnt; i++) {
+        //         const ver_x = x + size * Math.cos(2 * Math.PI * i / vertices_cnt);
+        //         const ver_y = y + size * Math.sin(2 * Math.PI * i / vertices_cnt);
+        //         context.lineTo(ver_x, ver_y);
+        //         vertices.push({ x: ver_x, y: ver_y });
+        //     }
+        //     context.stroke();
+        //     context.closePath();
+            
+        //     setTimeout(() => {
+        //         for (let i = 0; i < vertices_cnt; i++) {
+        //             const ver_x = vertices[i].x;
+        //             const ver_y = vertices[i].y;
+        //             drawFractal(ver_x, ver_y, size / 2);
+        //         }
+        //     }, 1000); 
+        // }
+
+
+
+        function drawFractal(x, y, length, branches_cnt, depth, direction, branches_angle_pi, scale_factor) {
+            if (!isDrawing) { return; }
+
+            if (depth <= 0) {
+                return;
+            }
+
+            var angle_offset = 0
+            if (branches_cnt % 2 == 0) {
+                angle_offset = Math.PI * branches_angle_pi / 2
+            }
+            const vertices = [];
+            context.beginPath();
+            for (let i = 0; i < branches_cnt; i++) {
+                const dir_loc = parseFloat(direction + angle_offset + branches_angle_pi * Math.PI * Math.ceil(i / 2) * Math.pow(-1, i));
+                const ver_x = x + length * Math.sin(dir_loc);
+                const ver_y = y + length * Math.cos(dir_loc);
+                context.moveTo(x, y);
+                context.lineTo(ver_x, ver_y);
+                vertices.push({ x: ver_x, y: ver_y, direction: dir_loc });
+            }
+            context.stroke();
+            context.closePath();
+
+            setTimeout(() => {
+                for (let i = 0; i < branches_cnt; i++) {
+                    const ver_x = vertices[i].x;
+                    const ver_y = vertices[i].y;
+                    const direction = vertices[i].direction;
+                    drawFractal(ver_x, ver_y, length * scale_factor, branches_cnt, depth - 1, direction, branches_angle_pi, scale_factor);
+                }
+            }, 1); 
+        }
+
+
+        function drawSymmetricalTree(x, y) {
+            if (!isDrawing) { return; }
+            const symmetrical_cnt     = parseInt(document.getElementById('symmetrical_cnt').value);
+            const length              = parseFloat(document.getElementById('length').value);
+            const branches_cnt        = parseInt(document.getElementById('branches_cnt').value);
+            const depth               = parseInt(document.getElementById('depth').value);
+            const init_direction_pi   = parseFloat(document.getElementById('init_direction_pi').value);
+            const branches_angle_pi   = parseFloat(document.getElementById('branches_angle_pi').value);
+            const scale_factor        = parseFloat(document.getElementById('scale_factor').value);
+
+            items['SymmetricalTree'].symmetrical_cnt.value     = symmetrical_cnt;
+            items['SymmetricalTree'].length.value              = length;
+            items['SymmetricalTree'].branches_cnt.value        = branches_cnt;
+            items['SymmetricalTree'].depth.value               = depth;
+            items['SymmetricalTree'].init_direction_pi.value   = init_direction_pi;
+            items['SymmetricalTree'].branches_angle_pi.value   = branches_angle_pi;
+            items['SymmetricalTree'].scale_factor.value        = scale_factor;
+
+            console.log('drawSymmetricalTree', symmetrical_cnt, length, branches_cnt, depth, init_direction_pi, branches_angle_pi, scale_factor)
+            
+            const vertices = [];
+            context.beginPath();
+            for (let i = 0; i < symmetrical_cnt; i++) {
+                const dir_loc = init_direction_pi * Math.PI + 2 * Math.PI * i / symmetrical_cnt;
+                const ver_x = x + length * Math.sin(dir_loc);
+                const ver_y = y + length * Math.cos(dir_loc);
+                context.moveTo(x, y);
+                context.lineTo(ver_x, ver_y);
+                vertices.push({ x: ver_x, y: ver_y, direction: dir_loc });
+            }
+            context.stroke();
+            context.closePath();
+
+            setTimeout(() => {
+                for (let i = 0; i < symmetrical_cnt; i++) {
+                    const ver_x = vertices[i].x;
+                    const ver_y = vertices[i].y;
+                    const direction = vertices[i].direction;
+                    drawFractal(ver_x, ver_y, length * scale_factor, branches_cnt, depth - 1, direction, branches_angle_pi, scale_factor);
+                }
+            }, 1); 
+        }
+        default_items['SymmetricalTree'] = {
+            symmetrical_cnt:    { value: 10,      type: 'number', step: 1,    min: 1, name: 'symmetrical cnt' },
+            length:             { value: 100,     type: 'number', step: 0.01, min: 0, name: 'length' },
+            branches_cnt:       { value: 4,       type: 'number', step: 1,    min: 1, name: 'branches cnt' },
+            depth:              { value: 5,       type: 'number', step: 1,    min: 1, name: 'depth' },
+            init_direction_pi:  { value: 1,       type: 'number', step: 0.01, min: 0, name: 'init direction' },
+            branches_angle_pi:  { value: 1 / 2,   type: 'number', step: 0.01, min: 0, name: 'branches angle' },
+            scale_factor:       { value: 0.9,     type: 'number', step: 0.01, min: 0, name: 'scale factor'},
+        }
+
+        
+        function drawTree(x, y) {
+            if (!isDrawing) { return; }
+            const length              = parseFloat(document.getElementById('length').value);
+            const branches_cnt        = parseInt(document.getElementById('branches_cnt').value);
+            const depth               = parseInt(document.getElementById('depth').value);
+            const init_direction_pi   = parseFloat(document.getElementById('init_direction_pi').value);
+            const branches_angle_pi   = parseFloat(document.getElementById('branches_angle_pi').value);
+            const scale_factor        = parseFloat(document.getElementById('scale_factor').value);
+
+            items['Tree'].length.value          = length;
+            items['Tree'].branches_cnt.value    = branches_cnt;
+            items['Tree'].depth.value           = depth;
+            items['Tree'].init_direction_pi.value = init_direction_pi;
+            items['Tree'].branches_angle_pi.value = branches_angle_pi;
+            items['Tree'].scale_factor.value    = scale_factor;
+            
+
+            console.log('drawTree', length, branches_cnt, depth, init_direction_pi, branches_angle_pi, scale_factor)
+
+            drawFractal(x, y, length, branches_cnt, depth, init_direction_pi * Math.PI, branches_angle_pi, scale_factor);
+        }
+        default_items['Tree'] = {
+            length:             { value: 100,     type: 'number', step: 0.01, min: 0, name: 'length' },
+            branches_cnt:       { value: 2,       type: 'number', step: 1,    min: 1, name: 'branches cnt' },
+            depth:              { value: 7,       type: 'number', step: 1,    min: 1, name: 'depth' },
+            init_direction_pi:  { value: 1,       type: 'number', step: 0.01, min: 0, name: 'init direction' },
+            branches_angle_pi:  { value: 1 / 4,   type: 'number', step: 0.01, min: 0, name: 'branches angle' },
+            scale_factor:       { value: 0.8,     type: 'number', step: 0.01, min: 0, name: 'scale factor'},
+        }
+
+
+
+
+
+        data = JSON.parse(JSON.stringify(default_data));
+        items = JSON.parse(JSON.stringify(default_items));
+        load_cookies();
+        for (const key in items) {
+            const select = document.getElementById('itemsDropdown');
+            const newOption = document.createElement('option');
+            newOption.value = key; 
+            newOption.text = key; 
+            select.appendChild(newOption);
+        }
+        change_inputs();
+
+        function draw(x, y) {
+            draw_index += 1;
+            x_loc = Math.floor(x);
+            y_loc = Math.floor(y);
+            isDrawing = true;
+            const selected = document.getElementById('itemsDropdown').value
+            switch (selected) {
+                case 'Tree':
+                    drawTree(x_loc, y_loc);
+                    break;
+
+                case 'SymmetricalTree':
+                    drawSymmetricalTree(x_loc, y_loc);
+                    break;
+                    
+                default:
+                    alert('Invalid selected item')
+            }
+            last_x = x_loc;
+            last_y = y_loc;
+            update_last_coords();
+            save_cookies();
+        }
+
+        function draw_from_midpoint() {
+            console.log('draw_from_midpoint');
+            const x = canvas.width / 2;
+            const y = canvas.height / 2;
+            draw(x, y);
+        }
+
+        function draw_from_last_point() {
+            console.log('draw_from_last_point');
+            draw(last_x, last_y);
+        }
+
+        function draw_from_custom_point() {
+            console.log('draw_from_custom_point');
+            const x = parseInt(document.getElementById('custom_point_coords_x').value);
+            const y = parseInt(document.getElementById('custom_point_coords_y').value);
+            draw(x, y);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            console.log('mousedown, drawing');
+            const x = e.clientX - canvas.getBoundingClientRect().left;
+            const y = e.clientY - canvas.getBoundingClientRect().top;
+            draw(x, y);
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            // isDrawing = false;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            update_actual_coords(e);
+            // if (e.buttons !== 1) return; 
+            // const { clientX, clientY } = e;
+            // drawLine({ x: clientX, y: clientY, type: 'mousemove' });
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            // drawLine({ type: 'mouseleave' });
+        });
+        
+
+    </script>
+</body>
+</html>
