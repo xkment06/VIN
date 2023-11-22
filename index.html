@@ -6,12 +6,6 @@
 </head>
 <style>
     
-/**
- * !     preview mode
-        
-*/
-
-        
     #paintCanvas {
         position: absolute;
         top: 10px;
@@ -63,12 +57,10 @@
             <input type="checkbox" id="use_background" style="width: auto;" oninput="use_background_changed()">
             <label>Use background</label> <br>
         </div> <br>
-        
-
         <label for="itemsDropdown">Select an Item:</label> <br>
         <select id="itemsDropdown" onchange="change_inputs()"> </select> <br><br>
+        <input type="button" value="Randomize" onclick="randomize();"><br>
         <div id="dynamicInputs"></div> <br><br>
-
         <div>
             <label>waypoints </label><label id="waypoint_cnt">0</label><br>
             <input type="button" value="Push waypoint" onclick="push_waypoint();"><br>
@@ -77,7 +69,6 @@
             <input type="button" class="exists_waypoint" value="Load waypoint" onclick="load_waypoint();">
             <br class="exists_waypoint">
         </div> <br>
-        
         <div>
             <label>Points (X | Y) [px]:</label><br>
             <div style="display: inline-block;">
@@ -103,7 +94,6 @@
             <input class="coord-input" type="number" step="1" min="1" id="custom_point_coords_y" value="0"></input><br>
             <label>(possible outside of the board)</label><br>
         </div> <br>
-
         <div>
             <input type="button" value="Draw from midpoint" onclick="draw_from_midpoint();"><br>
             <input type="button" value="Draw from last p." onclick="draw_from_last_point();"><br>
@@ -111,12 +101,10 @@
             <input type="button" value="Stop drawing" onclick="stop_drawing();"><br>
             <input type="button" value="Clear" onclick="plate_clear();"><br>
         </div> <br>
-
         <div>
             <input type="button" value="Download" onclick="download_image();"><br>
             <input type="button" value="Load" onclick="load_image();"><br>
         </div> <br>
-
         <div>
             <label>Board width | height</label> <br>
             <input class="coord-input" type="number" id="plate_width" step="1" min="1" 
@@ -125,7 +113,6 @@
             <input class="coord-input" type="number" id="plate_height" step="1" min="1" 
                 id="custom_point_coords_y" value="0" oninput="plate_heigh_changed();"></input><br>
         </div> <br>
-
         <div>
             <input type="checkbox" style="width: auto;" id="save_cookies" oninput="save_cookies_changed()"><label>Save settings</label> <br>
             <label>(after each drawing)</label> <br>
@@ -133,27 +120,22 @@
             <input type="button" value="Restore defaults" onclick="restore_defaults();"><br>
         </div> <br>
     </div>
-
     <canvas id="paintCanvas" style="border: 1px solid #000;"></canvas>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.1/socket.io.js"></script>
-
     <script>
-        
         var canvas = null;
         var tmp_canvas = null;
         var tmp_canvas_draw_index = -1;
         var draw_index = 0;
-
         var items = {}
         var default_items = {}
         const history = [];
-
         var isDrawing = false
-
         var last_x = 0;
         var last_y = 0;
-
         var saving_to_cookies = false;
+        var empty = true;
+        var only_random = false;
 
         default_data = {
             pen_width: 1,
@@ -182,7 +164,6 @@
             update_midpoint_coords();
         }
         uprage_gui_board_size();
-        
         const context = canvas.getContext('2d');
 
         function update_actual_coords(e) {
@@ -190,7 +171,6 @@
             const y = Math.floor(e.clientY - canvas.getBoundingClientRect().top);
             document.getElementById('actual_point_coords_x').innerHTML = x;
             document.getElementById('actual_point_coords_y').innerHTML = y;
-            // console.log('update_actual_coords', x, y);
         }
 
         function update_last_coords() {
@@ -265,6 +245,8 @@
         function plate_clear() {
             console.log('plate_clear');
             context.clearRect(0, 0, canvas.width, canvas.height);
+            empty = true;
+            only_random = false;
         }
 
         function stop_drawing() {
@@ -293,6 +275,9 @@
 
         function pop_waypoint() {
             console.log('pop_waypoint');
+            if (history.length == 0) {
+                return;
+            }
             canvas.width = history[history.length - 1].width;
             canvas.height = history[history.length - 1].height;
             context.putImageData(history.pop(), 0, 0);
@@ -312,8 +297,6 @@
             const selected = document.getElementById('itemsDropdown').value;
             const inputs = document.getElementById('dynamicInputs');
             inputs.innerHTML = '';
-            // console.log('change_inputs', selected);
-            // console.log(items[selected]);
             for (const key in items[selected]) {
                 label = document.createElement('label')
                 label.innerHTML = items[selected][key].name;
@@ -326,6 +309,7 @@
                 input.value = items[selected][key].value;
                 input.min   = items[selected][key].min;
                 input.max   = items[selected][key].max;
+                input.slide_max = items[selected][key].slide_max;
                 inputs.appendChild(input);
                 inputs.appendChild(document.createElement('br'));
             }
@@ -366,9 +350,7 @@
             context.globalCompositeOperation = 'destination-over';
             context.fillRect(0, 0, canvas.width, canvas.height);
             context.globalCompositeOperation = 'source-over';
-              
             download_image_without_background();
-
             context.putImageData(tmp, 0, 0);
         }
 
@@ -396,11 +378,20 @@
             input.click();
         }
 
-
-
-
-
-
+        function randomize() {
+            const selected = document.getElementById('itemsDropdown').value;
+            const inputs = document.getElementById('dynamicInputs');
+            for (const key in items[selected]) {
+                item = items[selected][key];
+                items[selected][key].value = Math.random() * (item.slide_max - item.min) + item.min;
+                items[selected][key].value = Math.round(items[selected][key].value / item.step) * item.step;
+            }
+            change_inputs();
+            if (empty || only_random) {
+                plate_clear();
+                draw_from_midpoint(from_random=true);
+            }
+        }
 
         function get_cookie_names() {
             var cookies = document.cookie.split('; ');
@@ -412,20 +403,12 @@
             return list;
         }
 
-
-
-
-
-
-
         function set_cookie(cookieName, cookieValue, daysToExpire = 365) {
             var expirationDate = new Date();
             expirationDate.setDate(expirationDate.getDate() + daysToExpire);
             var encodedValue = encodeURIComponent(cookieValue);
             var cookieString = cookieName + '=' + encodedValue + '; expires=' + expirationDate.toUTCString() + '; path=/';
             document.cookie = cookieString;
-
-            // console.log(cookieString);
         }
 
         function get_cookie(cookieName) {
@@ -449,59 +432,25 @@
             save_cookies();
         }
 
-
-
-
-        // function save_object_to_cookies(name, obj) {
-        //     document.cookie = `${name}=${JSON.stringify(obj)}`;
-        // }
-
-        // function load_object_from_cookies(name) {
-        //     const cookies = document.cookie.split(';');
-        //     const cookieName = `${name}=`;
-        //     for (let i = 0; i < cookies.length; i++) {
-        //         console.log(cookies[i]);
-        //         let cookie = cookies[i].trim();
-        //         if (cookie.indexOf(cookieName) === 0) {
-        //             return JSON.parse(cookie.substring(cookieName.length));
-        //         }
-        //     }
-        //     return null;
-        // }
-
-        // function clear_cookie(name) {
-        //     document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-        // }
-
         function load_cookies() {
             console.log('load_cookies');
-            // var stored_items = load_object_from_cookies('items');
             var stored_items = JSON.parse(get_cookie('items'));
-            // console.log('stored_items', stored_items);
             for (const key in stored_items) {
                 if (items.hasOwnProperty(key)) {
-                    // console.log('     updating', key, items[key]);
                     for (const key_2 in items[key]) {
-                        // console.log('          updating', key_2, items[key][key_2]);
                         items[key][key_2].value = stored_items[key][key_2].value;
                     }
                 }
             }
             change_inputs();
-            // console.log(stored_items);
-
             saving_to_cookies = get_cookie('saving_to_cookies') == 'true';
             document.getElementById('save_cookies').checked = saving_to_cookies;
-
             stored_data = JSON.parse(get_cookie('data'));
             for (const key in stored_data) {
                 if (data.hasOwnProperty(key)) {
                     data[key] = stored_data[key];
                 }
             }
-            console.log(stored_data)
-            console.log(data)
-
             document.getElementById('pen_width_1').value = data.pen_width;
             document.getElementById('pen_color').value = data.pen_color;
             document.getElementById('background_color').value = data.background_color;
@@ -515,25 +464,19 @@
         function save_cookies() {
             if (saving_to_cookies) {
                 console.log('save_cookies');
-                // save_object_to_cookies('items', items);
                 set_cookie('items', JSON.stringify(items));
-                // console.log(items);
-                // console.log(document.cookie);
-
                 set_cookie('data', JSON.stringify(data));
             }
         }
 
         function clear_cookies() {
             console.log('clear_cookies');
-            // clear_cookie('items');
             set_cookie('items', JSON.stringify(items), 0);
         }
 
         function save_cookies_changed() {
             console.log('save_cookies_changed');
             saving_to_cookies = document.getElementById('save_cookies').checked;
-            
             set_cookie('saving_to_cookies', saving_to_cookies);
         }
 
@@ -592,42 +535,38 @@
         //     }, 1000); 
         // }
 
-
-
-        function drawFractal(x, y, length, branches_cnt, depth, direction, branches_angle_pi, scale_factor) {
+        function drawFractal(x, y, length, branches_cnt, depth, direction, branches_angle, scale_factor, angle_random, length_random) {
             if (!isDrawing) { return; }
-
-            if (depth <= 0) {
-                return;
-            }
-
+            if (depth <= 0) { return; }
             var angle_offset = 0
             if (branches_cnt % 2 == 0) {
-                angle_offset = Math.PI * branches_angle_pi / 2
+                angle_offset = branches_angle / 2
             }
             const vertices = [];
             context.beginPath();
             for (let i = 0; i < branches_cnt; i++) {
-                const dir_loc = parseFloat(direction + angle_offset + branches_angle_pi * Math.PI * Math.ceil(i / 2) * Math.pow(-1, i));
-                const ver_x = x + length * Math.sin(dir_loc);
-                const ver_y = y + length * Math.cos(dir_loc);
+                angle_offset_2 = (Math.random() - 0.5) * 2 * branches_angle * angle_random;
+                angle_offset_2 = 0;
+                const dir_loc = parseFloat(direction + angle_offset + angle_offset_2 + branches_angle * Math.ceil(i / 2) * Math.pow(-1, i));
+                const len_loc = length * (1 + (Math.random() - 0.5) * 2 * length_random);
+                const ver_x = x + len_loc * Math.sin(dir_loc / 180 * Math.PI);
+                const ver_y = y + len_loc * Math.cos(dir_loc / 180 * Math.PI);
                 context.moveTo(x, y);
                 context.lineTo(ver_x, ver_y);
-                vertices.push({ x: ver_x, y: ver_y, direction: dir_loc });
+                vertices.push({ x: ver_x, y: ver_y, direction: dir_loc, len: len_loc });
             }
             context.stroke();
             context.closePath();
-
             setTimeout(() => {
                 for (let i = 0; i < branches_cnt; i++) {
                     const ver_x = vertices[i].x;
                     const ver_y = vertices[i].y;
                     const direction = vertices[i].direction;
-                    drawFractal(ver_x, ver_y, length * scale_factor, branches_cnt, depth - 1, direction, branches_angle_pi, scale_factor);
+                    const len = vertices[i].len;
+                    drawFractal(ver_x, ver_y, len * scale_factor, branches_cnt, depth - 1, direction, branches_angle, scale_factor, angle_random, length_random);
                 }
             }, 1); 
         }
-
 
         function drawSymmetricalTree(x, y) {
             if (!isDrawing) { return; }
@@ -635,29 +574,33 @@
             const length              = parseFloat(document.getElementById('length').value);
             const branches_cnt        = parseInt(document.getElementById('branches_cnt').value);
             const depth               = parseInt(document.getElementById('depth').value);
-            const init_direction_pi   = parseFloat(document.getElementById('init_direction_pi').value);
-            const branches_angle_pi   = parseFloat(document.getElementById('branches_angle_pi').value);
+            const init_direction      = parseFloat(document.getElementById('init_direction').value);
+            const branches_angle      = parseFloat(document.getElementById('branches_angle').value);
             const scale_factor        = parseFloat(document.getElementById('scale_factor').value);
+            const angle_random        = parseFloat(document.getElementById('angle_random').value);
+            const length_random        = parseFloat(document.getElementById('length_random').value);
 
             items['SymmetricalTree'].symmetrical_cnt.value     = symmetrical_cnt;
             items['SymmetricalTree'].length.value              = length;
             items['SymmetricalTree'].branches_cnt.value        = branches_cnt;
             items['SymmetricalTree'].depth.value               = depth;
-            items['SymmetricalTree'].init_direction_pi.value   = init_direction_pi;
-            items['SymmetricalTree'].branches_angle_pi.value   = branches_angle_pi;
+            items['SymmetricalTree'].init_direction.value      = init_direction;
+            items['SymmetricalTree'].branches_angle.value      = branches_angle;
             items['SymmetricalTree'].scale_factor.value        = scale_factor;
 
-            console.log('drawSymmetricalTree', symmetrical_cnt, length, branches_cnt, depth, init_direction_pi, branches_angle_pi, scale_factor)
-            
+            console.log('drawSymmetricalTree', symmetrical_cnt, length, branches_cnt, depth, init_direction, branches_angle, scale_factor, angle_random, length_random)
+
             const vertices = [];
             context.beginPath();
             for (let i = 0; i < symmetrical_cnt; i++) {
-                const dir_loc = init_direction_pi * Math.PI + 2 * Math.PI * i / symmetrical_cnt;
-                const ver_x = x + length * Math.sin(dir_loc);
-                const ver_y = y + length * Math.cos(dir_loc);
+                const angle_offset = (Math.random() - 0.5) * 2 * branches_angle * angle_random;
+                const dir_loc = init_direction + angle_offset + i * 360 / symmetrical_cnt;
+                const len_loc = length * (1 + (Math.random() - 0.5) * 2 * length_random);
+                const ver_x = x + len_loc * Math.sin(dir_loc / 180 * Math.PI);
+                const ver_y = y + len_loc * Math.cos(dir_loc / 180 * Math.PI);
                 context.moveTo(x, y);
                 context.lineTo(ver_x, ver_y);
-                vertices.push({ x: ver_x, y: ver_y, direction: dir_loc });
+                vertices.push({ x: ver_x, y: ver_y, direction: dir_loc, len: len_loc });
             }
             context.stroke();
             context.closePath();
@@ -667,54 +610,56 @@
                     const ver_x = vertices[i].x;
                     const ver_y = vertices[i].y;
                     const direction = vertices[i].direction;
-                    drawFractal(ver_x, ver_y, length * scale_factor, branches_cnt, depth - 1, direction, branches_angle_pi, scale_factor);
+                    const len = vertices[i].len;
+                    drawFractal(ver_x, ver_y, len * scale_factor, branches_cnt, depth - 1, direction, branches_angle, scale_factor, angle_random, length_random);
                 }
             }, 1); 
         }
         default_items['SymmetricalTree'] = {
-            symmetrical_cnt:    { value: 10,      type: 'number', step: 1,    min: 1, name: 'symmetrical cnt' },
-            length:             { value: 100,     type: 'number', step: 0.01, min: 0, name: 'length' },
-            branches_cnt:       { value: 4,       type: 'number', step: 1,    min: 1, name: 'branches cnt' },
-            depth:              { value: 5,       type: 'number', step: 1,    min: 1, name: 'depth' },
-            init_direction_pi:  { value: 1,       type: 'number', step: 0.01, min: 0, name: 'init direction' },
-            branches_angle_pi:  { value: 1 / 2,   type: 'number', step: 0.01, min: 0, name: 'branches angle' },
-            scale_factor:       { value: 0.9,     type: 'number', step: 0.01, min: 0, name: 'scale factor'},
+            symmetrical_cnt:    { value: 9,      type: 'number', step: 1,    min: 1, slide_max: 10,   name: 'symmetrical cnt' },
+            length:             { value: 100,     type: 'number', step: 0.01, min: 0, slide_max: 500,  name: 'length' },
+            branches_cnt:       { value: 8,       type: 'number', step: 1,    min: 1, slide_max: 10,   name: 'branches cnt' },
+            depth:              { value: 5,       type: 'number', step: 1,    min: 1, slide_max: 7,   name: 'depth' },
+            init_direction:     { value: 0,       type: 'number', step: 1,    min: 0, slide_max: 360,  name: 'init direction' },
+            branches_angle:     { value: 90,      type: 'number', step: 1,    min: 0, slide_max: 180,  name: 'branches angle' },
+            scale_factor:       { value: 0.9,     type: 'number', step: 0.01, min: 0, slide_max: 10,   name: 'scale factor'},
+            angle_random:       { value: 0,       type: 'number', step: 0.01, min: 0, slide_max: 1,    name: 'angle random'},
+            length_random:      { value: 0,       type: 'number', step: 0.01, min: 0, slide_max: 1,    name: 'length random'},
         }
-
+ 
         
         function drawTree(x, y) {
             if (!isDrawing) { return; }
             const length              = parseFloat(document.getElementById('length').value);
             const branches_cnt        = parseInt(document.getElementById('branches_cnt').value);
             const depth               = parseInt(document.getElementById('depth').value);
-            const init_direction_pi   = parseFloat(document.getElementById('init_direction_pi').value);
-            const branches_angle_pi   = parseFloat(document.getElementById('branches_angle_pi').value);
+            const init_direction      = parseFloat(document.getElementById('init_direction').value);
+            const branches_angle      = parseFloat(document.getElementById('branches_angle').value);
             const scale_factor        = parseFloat(document.getElementById('scale_factor').value);
+            const angle_random        = parseFloat(document.getElementById('angle_random').value);
+            const length_random       = parseFloat(document.getElementById('length_random').value);
 
             items['Tree'].length.value          = length;
             items['Tree'].branches_cnt.value    = branches_cnt;
             items['Tree'].depth.value           = depth;
-            items['Tree'].init_direction_pi.value = init_direction_pi;
-            items['Tree'].branches_angle_pi.value = branches_angle_pi;
+            items['Tree'].init_direction.value  = init_direction;
+            items['Tree'].branches_angle.value  = branches_angle;
             items['Tree'].scale_factor.value    = scale_factor;
             
+            console.log('drawTree', length, branches_cnt, depth, init_direction, branches_angle, scale_factor, angle_random, length_random)
 
-            console.log('drawTree', length, branches_cnt, depth, init_direction_pi, branches_angle_pi, scale_factor)
-
-            drawFractal(x, y, length, branches_cnt, depth, init_direction_pi * Math.PI, branches_angle_pi, scale_factor);
+            drawFractal(x, y, length, branches_cnt, depth, init_direction, branches_angle, scale_factor, angle_random, length_random);
         }
         default_items['Tree'] = {
-            length:             { value: 100,     type: 'number', step: 0.01, min: 0, name: 'length' },
-            branches_cnt:       { value: 2,       type: 'number', step: 1,    min: 1, name: 'branches cnt' },
-            depth:              { value: 7,       type: 'number', step: 1,    min: 1, name: 'depth' },
-            init_direction_pi:  { value: 1,       type: 'number', step: 0.01, min: 0, name: 'init direction' },
-            branches_angle_pi:  { value: 1 / 4,   type: 'number', step: 0.01, min: 0, name: 'branches angle' },
-            scale_factor:       { value: 0.8,     type: 'number', step: 0.01, min: 0, name: 'scale factor'},
+            length:             { value: 100,     type: 'number', step: 0.01, min: 0, slide_max: 500,  name: 'length' },
+            branches_cnt:       { value: 2,       type: 'number', step: 1,    min: 1, slide_max: 10,   name: 'branches cnt' },
+            depth:              { value: 7,       type: 'number', step: 1,    min: 1, slide_max: 7,    name: 'depth' },
+            init_direction:     { value: 180,     type: 'number', step: 0.01, min: 0, slide_max: 360,  name: 'init direction' },
+            branches_angle:     { value: 45,      type: 'number', step: 0.01, min: 0, slide_max: 180,  name: 'branches angle' },
+            scale_factor:       { value: 0.8,     type: 'number', step: 0.01, min: 0, slide_max: 10,   name: 'scale factor'},
+            angle_random:       { value: 0,       type: 'number', step: 0.01, min: 0, slide_max: 1,    name: 'angle random'},
+            length_random:      { value: 0,       type: 'number', step: 0.01, min: 0, slide_max: 1,    name: 'length random'},
         }
-
-
-
-
 
         data = JSON.parse(JSON.stringify(default_data));
         items = JSON.parse(JSON.stringify(default_items));
@@ -728,7 +673,9 @@
         }
         change_inputs();
 
-        function draw(x, y) {
+        function draw(x, y, from_random=false) {
+            only_random = empty & from_random;
+            empty = false;
             draw_index += 1;
             x_loc = Math.floor(x);
             y_loc = Math.floor(y);
@@ -752,11 +699,11 @@
             save_cookies();
         }
 
-        function draw_from_midpoint() {
+        function draw_from_midpoint(from_random=false) {
             console.log('draw_from_midpoint');
             const x = canvas.width / 2;
             const y = canvas.height / 2;
-            draw(x, y);
+            draw(x, y, from_random);
         }
 
         function draw_from_last_point() {
@@ -793,6 +740,17 @@
             // drawLine({ type: 'mouseleave' });
         });
         
+
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && event.code === 'KeyS') {
+                push_waypoint();
+                event.preventDefault();
+            } else if (event.ctrlKey && !event.shiftKey && event.code === 'KeyZ') {
+                pop_waypoint();
+            } else if (event.ctrlKey && event.shiftKey && event.code === 'KeyZ') {
+                load_waypoint();
+            }
+        });
 
     </script>
 </body>
