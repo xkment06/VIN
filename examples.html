@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Examples</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .example {
+            margin-bottom: 20px;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Examples</h1>
+
+    <script>
+        for (let i = 1; i <= 14; i++) {
+            document.write('<div class="example">');
+            document.write('<h2>Example ' + i + '</h2>');
+            document.write('<img src="' + i + '.png" alt="Example ' + i + '">');
+            document.write('</div>');
+        }
+    </script>
+
+</body>
+</html>
