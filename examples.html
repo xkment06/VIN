@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Examples</title>
+    <title>Image Gallery</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -11,29 +11,51 @@
         }
         h1 {
             color: #333;
+            text-align: center;
         }
-        .example {
-            margin-bottom: 20px;
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .gallery-item {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            cursor: pointer;
         }
         img {
             max-width: 100%;
             height: auto;
-            border: 1px solid #ccc;
+            display: block;
+        }
+        .item-caption {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px;
+            text-align: center;
         }
     </style>
 </head>
 <body>
 
-    <h1>Examples</h1>
+    <h1>Image Gallery</h1>
 
-    <script>
-        for (let i = 1; i <= 14; i++) {
-            document.write('<div class="example">');
-            document.write('<h2>Example ' + i + '</h2>');
-            document.write('<img src="' + i + '.png" alt="Example ' + i + '">');
-            document.write('</div>');
-        }
-    </script>
+    <div class="gallery" id="imageGallery">
+        <script>
+            for (let i = 1; i <= 14; i++) {
+                document.write('<div class="gallery-item" onclick="window.location.href=\'' + i + '.png\'">');
+                document.write('<img src="' + i + '.png" alt="Example ' + i + '">');
+                document.write('<div class="item-caption">Example ' + i + '</div>');
+                document.write('</div>');
+            }
+        </script>
+    </div>
 
 </body>
 </html>
